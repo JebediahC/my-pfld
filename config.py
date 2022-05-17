@@ -30,7 +30,7 @@ WEIGHT_DECAY = 1e-6
 LR_PATIENCE = 40
 # epoch
 START_EPOCH = 1
-END_EPOCH = 500
+END_EPOCH = 300
 SNAPSHOT = './snapshot/'
 LOG_FILE = 'logs/train.logs'
 RESUME = ''
@@ -45,6 +45,8 @@ VAL_DATAROOT = os.path.join(DATA_DIR, OUT_DIRS['test'], 'list.txt')
 TRAIN_BATCH_SIZE = 32
 VAL_BATCH_SIZE = 32
 
+# pack logs
+MILESTONES = [1,2,2,20,40,60,80,100,120,140,160,200]
 
 # -------测试---------
 
