@@ -23,6 +23,10 @@ from dataset.datasets import WLFWDatasets
 from models.pfld import PFLDInference, AuxiliaryNet
 from pfld.loss import PFLDLoss
 from pfld.utils import AverageMeter
+from pfld.loss import LandmarkLoss
+from models.PFLD import PFLD
+from models.PFLD_Ultralight import PFLD_Ultralight
+from models.PFLD_Ultralight_Slim import PFLD_Ultralight_Slim
 
 from config import *
 
@@ -70,7 +74,7 @@ def draw_batch(landmarks:np.ndarray, imgs:torch.Tensor, writer:SummaryWriter, ta
 
     writer.add_images(tag,img_out, step,dataformats='NHWC')
 
-def train(train_loader, pfld_backbone, auxiliaryNet, criterion, optimizer, epoch ,writer, args):
+def train(train_loader, pfld_model, criterion, optimizer, epoch ,writer, args):
     losses=AverageMeter()
     weighted_loss, loss=None,None
     to_draw = True
@@ -81,37 +85,37 @@ def train(train_loader, pfld_backbone, auxiliaryNet, criterion, optimizer, epoch
         img = img.to(device)
         attribute_gt = attribute_gt.to(device)
         landmark_gt = landmark_gt.to(device)
-        euler_angle_gt = euler_angle_gt.to(device)
-        pfld_backbone = pfld_backbone.to(device)
-        auxiliaryNet = auxiliaryNet.to(device)
+        # euler_angle_gt = euler_angle_gt.to(device)
+        pfld_model = pfld_model.to(device)
+        # auxiliaryNet = auxiliaryNet.to(device)
         # 计算loss
-        features, landmarks = pfld_backbone(img)
-        angle = auxiliaryNet(features)
-        weighted_loss, loss = criterion(attribute_gt, landmark_gt, euler_angle_gt, angle, landmarks, args.train_batch_size)
+        landmarks = pfld_model(img)
+        # angle = auxiliaryNet(features)
+        loss = criterion(landmark_gt, landmarks)
         # 更新参数
         optimizer.zero_grad()
-        weighted_loss.backward()
+        loss.backward()
         optimizer.step()
     
         losses.update(loss.item())
 
-    return weighted_loss, loss
+    return loss
 
-def validate(val_loader, pfld_backbone, auxiliaryNet, criterion, epoch, writer, args):
+def validate(val_loader, pfld_model, criterion, epoch, writer, args):
     to_draw = True
-    pfld_backbone.eval()
-    auxiliaryNet.eval()
+    pfld_model.eval()
+    # auxiliaryNet.eval()
     losses = []
     with torch.no_grad():
         for img, landmark_gt, attribute_gt, euler_angle_gt in val_loader:
             img = img.to(device)
-            attribute_gt = attribute_gt.to(device)
+            # attribute_gt = attribute_gt.to(device)
             landmark_gt = landmark_gt.to(device)
-            euler_angle_gt = euler_angle_gt.to(device)
-            pfld_backbone = pfld_backbone.to(device)
-            auxiliaryNet = auxiliaryNet.to(device)
+            # euler_angle_gt = euler_angle_gt.to(device)
+            pfld_model = pfld_model.to(device)
+            # auxiliaryNet = auxiliaryNet.to(device)
 
-            _, landmark = pfld_backbone(img)
+            landmark = pfld_model(img)
             loss = torch.mean(torch.sum((landmark_gt - landmark)**2, axis=1)) # l2 distance
             losses.append(loss.cpu().numpy()) 
             # 展示每轮结果
@@ -143,11 +147,13 @@ def main(args):
 
     # Step2: modle, criterion, optimizer, scheduler
     print("--------Loading modle, criterion, optimizer, scheduler...-----------")
-    pfld_backbone = PFLDInference().to(device)
-    auxiliaryNet = AuxiliaryNet().to(device)
-    criterion  = PFLDLoss()
+    # pfld_backbone = PFLDInference().to(device)
+    # auxiliaryNet = AuxiliaryNet().to(device)
+    # criterion  = PFLDLoss()
+    pfld_model = PFLD_Ultralight(0.25)
+    criterion = LandmarkLoss()
     optimizer = torch.optim.Adam(
-        [{'params': pfld_backbone.parameters()},{'params': auxiliaryNet.parameters()}],
+        [{'params': pfld_model.parameters()}],
         lr=args.base_lr,
         weight_decay=args.weight_decay
     )
@@ -158,8 +164,8 @@ def main(args):
     print("--------Loading checkpoint--------")
     if args.resume:
         checkpoint = torch.load(args.resume)
-        auxiliaryNet.load_state_dict(checkpoint["auxilirynet"]) # key不太对，但已经保存了，没关系了
-        pfld_backbone.load_state_dict(checkpoint["pfld_backbone"])
+        # auxiliaryNet.load_state_dict(checkpoint["auxilirynet"]) # key不太对，但已经保存了，没关系了
+        pfld_model.load_state_dict(checkpoint["pfld_model"])
         args.start_epoch = checkpoint["epoch"]
     # Step3: data
     print("----------Setting Dataloaders--------")
@@ -176,24 +182,25 @@ def main(args):
     writer=SummaryWriter(args.tensorboard)
     for epoch in range(args.start_epoch,args.end_epoch):
         # 训练，并获得loss
-        weighted_train_loss, train_loss = train(dataloader, pfld_backbone, auxiliaryNet, criterion, optimizer, epoch, writer, args)
+        train_loss = train(dataloader, pfld_model, criterion, optimizer, epoch, writer, args)
         # 保存检查点
         checkpoint_filename=os.path.join(args.snapshot, "checkpoint_epoch_"+str(epoch)+'.pth.tar')
         save_checkpoint(
             {
                 'epoch':epoch,
-                'pfld_backbone':pfld_backbone.state_dict(),
-                'auxilirynet':auxiliaryNet.state_dict()
+                'pfld_model':pfld_model.state_dict()
             },
             checkpoint_filename
         )
         # 验证
-        val_loss = validate(wlfw_val_dataloader, pfld_backbone,auxiliaryNet, criterion, epoch, writer, args)
+        val_loss = validate(wlfw_val_dataloader, pfld_model,criterion, epoch, writer, args)
         scheduler.step(val_loss)
         # loss写入tensorboard
-        writer.add_scalar('data/weighted_loss', weighted_train_loss, epoch)
+        # writer.add_scalar('data/weighted_loss', weighted_train_loss, epoch)
         writer.add_scalars('data/loss', {'val loss': val_loss,'train loss': train_loss}, epoch)
         writer.close()
+        if epoch in MILESTONES:
+            os.system("zip logs.zip logs")
 
 def parse_args():
 # 获取参数

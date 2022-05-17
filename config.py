@@ -42,11 +42,13 @@ SHOW_TEST = 'True'
 # dataset
 DATA_ROOT = os.path.join(DATA_DIR, OUT_DIRS['train'], 'list.txt')
 VAL_DATAROOT = os.path.join(DATA_DIR, OUT_DIRS['test'], 'list.txt')
-TRAIN_BATCH_SIZE = 32
-VAL_BATCH_SIZE = 32
-
+TRAIN_BATCH_SIZE = 256
+VAL_BATCH_SIZE = 256
+# model
+MODEL_TYPE = 'PFLD_Ultralight'  # [PFLD, PFLD_Ultralight, PFLD_Ultralight_Slim]
+INPUT_SIZE = [96, 96]
 # pack logs
-MILESTONES = [1,2,2,20,40,60,80,100,120,140,160,200]
+MILESTONES = [1,2,3,20,40,60,80,100,120,140,160,200]
 
 # -------测试---------
 
